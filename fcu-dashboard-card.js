@@ -1,61 +1,56 @@
 /**
- * FCU Dashboard Card  v1.4.0
+ * FCU Dashboard Card  v1.5.0
  * ═══════════════════════════════════════════════════════════════
- * Dashboard YAML тохиргоо (entity шууд заана):
+ * Шинэчлэлт v1.5.0:
+ *   - ambient_entity дэмжлэг нэмэгдсэн (sensor.fcu_X_ambient_temperature
+ *     → scale: 0.1 → 23.8°C зөв харагдана)
+ *   - Сэнсний хурд цэгийн өнгө: ногоон→шар→улаан (хурдаар)
+ *   - Хамгийн дээд хурданд бүх цэг улаан болж гэрэл асах эффект
+ * ═══════════════════════════════════════════════════════════════
  *
+ * Dashboard YAML тохиргоо:
  *   type: custom:fcu-dashboard-card
  *   title: FCU Хяналтын самбар
  *   fcus:
  *     - entity: climate.fcu_1
- *       name: FCU DIS          # ← дурын нэр өгч болно (заавал биш)
+ *       name: FCU DIS
  *       slave: 2
- *       fault_entity: sensor.fcu_1_fault_status   # ← Register 24
+ *       ambient_entity: sensor.fcu_1_ambient_temperature   # ← scale: 0.1
+ *       fault_entity:   sensor.fcu_1_fault_status
  *     - entity: climate.fcu_2
- *       name: FCU 2
- *       slave: 3
- *       fault_entity: sensor.fcu_2_fault_status
- *     # ... шаардлагатай FCU-ийн тоогоор нэмнэ / хасна
- *
- * climate entity attributes:
- *   .state                          → off | cool | heat | fan_only
- *   .attributes.current_temperature → addr 20 (орчны темп)
- *   .attributes.temperature         → addr 4  (тохируулга)
- *   .attributes.fan_mode            → fan_low|fan_medium|fan_middle|fan_high
- *   .attributes.friendly_name       → карт дээрх нэр (name тохируулаагүй бол)
- *
- * fault_entity: sensor.fcu_X_fault_status  → Register 24 alarm bits
- *   холбосон бол алдааны хэсэг харагдана (ногоон/улаан/шар дугуй)
- *   холбоогүй бол алдааны хэсэг гарахгүй
- *
- * Горим өнгө: Хэрэглэлт=цэнхэр · Халаалт=улаан · Агааржуулалт=cyan · Унтраалттай=саарал
- * ═══════════════════════════════════════════════════════════════
+ *       ...
  */
 
-const FAN_DOTS  = { fan_low: 1, fan_medium: 3, fan_middle: 4, fan_high: 5 };
-const FAN_LABEL = { fan_low: "1-р шат", fan_medium: "3-р шат", fan_middle: "4-р шат", fan_high: "5-р шат" };
+const FAN_DOTS  = { fan_low: 1, fan_medium: 2, fan_middle: 3, fan_high: 5 };
+const FAN_LABEL = { fan_low: '1-р шат', fan_medium: '2-р шат', fan_middle: '3-р шат', fan_high: '5-р шат' };
+
+/* Цэгийн өнгө: байрлалаар (idx 0–4) */
+const DOT_CLR = ['#52A84B', '#8BC34A', '#FFC107', '#FF7043', '#E53935'];
 
 const HVAC_MODE = {
-  cool:     { label: "Хэрэглэлт",    icon: "❄", cls: "m-cool" },
-  heat:     { label: "Халаалт",      icon: "🔥", cls: "m-heat" },
-  fan_only: { label: "Агааржуулалт", icon: "💨", cls: "m-fan"  },
-  off:      { label: "Унтраалттай",  icon: "",   cls: "m-off"  },
+  cool:     { label: 'Хэрэглэлт',    icon: '❄',  cls: 'm-cool' },
+  heat:     { label: 'Халаалт',      icon: '🔥', cls: 'm-heat' },
+  fan_only: { label: 'Агааржуулалт', icon: '💨', cls: 'm-fan'  },
+  off:      { label: 'Унтраалттай',  icon: '',   cls: 'm-off'  },
 };
 
 /* Register 24 — PDF протоколын дагуу (Bit0–Bit6) */
 const ALARM_BITS = [
-  { bit: 0, name: "Орчны температур сенсор",         type: "err"  }, // Ambient temp sensor failure
-  { bit: 1, name: "Хоолойн температур сенсор",        type: "err"  }, // Pipe temp sensor failure
-  { bit: 2, name: "Хавхлагын гаралт",                 type: "warn" }, // Valve output flag
-  { bit: 3, name: "Пассив цэгийн хаалт",              type: "warn" }, // Passive point closure flag
-  { bit: 4, name: "Хөлдөлтөөс хамгаалалт идэвхтэй", type: "warn" }, // Antifreeze in progress
-  { bit: 5, name: "Хүйтэн салхины хамгаалалт",        type: "warn" }, // Protection against cold wind
-  { bit: 6, name: "Сэнсний алдаа",                    type: "err"  }, // Fan failure
+  { bit: 0, name: 'Орчны температур сенсор',         type: 'err'  },
+  { bit: 1, name: 'Хоолойн температур сенсор',        type: 'err'  },
+  { bit: 2, name: 'Хавхлагын гаралт',                 type: 'warn' },
+  { bit: 3, name: 'Пассив цэгийн хаалт',              type: 'warn' },
+  { bit: 4, name: 'Хөлдөлтөөс хамгаалалт идэвхтэй', type: 'warn' },
+  { bit: 5, name: 'Хүйтэн салхины хамгаалалт',        type: 'warn' },
+  { bit: 6, name: 'Сэнсний алдаа',                    type: 'err'  },
 ];
 
 const STYLES = `
 :host { display: block; font-family: var(--primary-font-family, sans-serif); }
 .root { padding: 14px 16px 18px; }
 .card-title { font-size: 15px; font-weight: 500; color: var(--primary-text-color); margin-bottom: 12px; }
+
+/* Summary */
 .summary { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 14px; }
 .s-box { background: var(--secondary-background-color); border-radius: 10px; padding: 10px 6px; text-align: center; }
 .s-num { font-size: 28px; font-weight: 500; line-height: 1.1; }
@@ -63,42 +58,59 @@ const STYLES = `
 .c-on  { color: var(--success-color, #3B6D11); }
 .c-off { color: var(--secondary-text-color); }
 .c-err { color: var(--error-color, #A32D2D); }
+
+/* Grid */
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
 @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
+
+/* FCU карт */
 .fcu { background: var(--card-background-color,#fff); border: 0.5px solid var(--divider-color); border-radius: 12px; padding: 12px 13px 10px; }
 .fcu.err-border { border: 1.5px solid var(--error-color, #E24B4A); }
 .hdr { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 9px; }
 .fcu-name { font-size: 13px; font-weight: 500; color: var(--primary-text-color); }
-.fcu-sub { font-size: 10px; color: var(--secondary-text-color); margin-top: 1px; }
+.fcu-sub  { font-size: 10px; color: var(--secondary-text-color); margin-top: 1px; }
 .badge { font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
 .b-on  { background: #EAF3DE; color: #3B6D11; }
 .b-off { background: var(--secondary-background-color); color: var(--secondary-text-color); }
 .b-err { background: #FCEBEB; color: #A32D2D; }
+
+/* Row */
 .row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 4px; }
 .lbl { color: var(--secondary-text-color); }
 .val { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 3px; }
-/* ── Горим өнгө ── */
+
+/* Горим өнгө */
 .m-cool { color: #1E88E5; }
 .m-heat { color: #E53935; }
 .m-fan  { color: #00ACC1; }
 .m-off  { color: var(--secondary-text-color); }
+
 /* ── Сэнсний хурд цэг ── */
 .fan-wrap { display: flex; align-items: center; gap: 5px; }
-.dots { display: flex; gap: 3px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--divider-color); }
-.dot.on         { background: #378ADD; }
-.dot.on.d-cool  { background: #1E88E5; }
-.dot.on.d-heat  { background: #E53935; }
-.dot.on.d-fan   { background: #00ACC1; }
+.dots { display: flex; gap: 4px; align-items: center; }
+.dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--divider-color, #ddd);
+  transition: background 0.3s;
+}
+.dot.on { /* өнгийг inline style-аар тохируулна */ }
+
+@keyframes dot-glow {
+  0%, 100% { box-shadow: 0 0 2px 1px rgba(229,57,53,0.45); }
+  50%       { box-shadow: 0 0 7px 3px rgba(229,57,53,0.80); }
+}
+.dot.d-pulse { animation: dot-glow 0.75s ease-in-out infinite; }
+
 .fan-lbl { font-size: 10px; color: var(--secondary-text-color); }
-/* ── Алдааны хэсэг ── */
+
+/* Алдааны хэсэг */
 .div { border: none; border-top: 0.5px solid var(--divider-color); margin: 8px 0; }
 .alarm-ttl { font-size: 10px; color: var(--secondary-text-color); margin-bottom: 5px; }
 .alarm-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 3px; }
-.a-lft { display: flex; align-items: center; gap: 4px; flex: 1; }
+.a-lft  { display: flex; align-items: center; gap: 4px; flex: 1; }
 .a-name { color: var(--secondary-text-color); }
-.a-st { font-weight: 500; white-space: nowrap; }
-.dot-s { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.a-st   { font-weight: 500; white-space: nowrap; }
+.dot-s  { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot-ok   { background: #52A84B; }
 .dot-err  { background: #E24B4A; }
 .dot-warn { background: #EF9F27; }
@@ -111,7 +123,7 @@ const STYLES = `
 class FcuDashboardCard extends HTMLElement {
   constructor() {
     super();
-    this.attachShadow({ mode: "open" });
+    this.attachShadow({ mode: 'open' });
     this._config = null;
     this._hass   = null;
   }
@@ -120,7 +132,7 @@ class FcuDashboardCard extends HTMLElement {
     if (!config.fcus || !Array.isArray(config.fcus)) {
       throw new Error(
         "'fcus' жагсаалт шаардлагатай.\n" +
-        "Жишээ:\nfcus:\n  - entity: climate.fcu_1\n    name: FCU 1\n    slave: 2"
+        'Жишээ:\nfcus:\n  - entity: climate.fcu_1\n    name: FCU 1\n    slave: 2'
       );
     }
     this._config = config;
@@ -135,39 +147,48 @@ class FcuDashboardCard extends HTMLElement {
   _st(id)      { return this._hass.states[id] || null; }
   _state(id)   { const s = this._st(id); return s ? s.state : null; }
   _attr(id, k) { const s = this._st(id); return s ? (s.attributes[k] ?? null) : null; }
-  _num(id)     { const v = parseFloat(this._state(id)); return isNaN(v) ? null : v; }
+  _numSt(id)   { const v = parseFloat(this._state(id)); return isNaN(v) ? null : v; }
 
   _build(fcu) {
     const cid      = fcu.entity;
     const hvacMode = this._state(cid);
-    const ambTemp  = this._attr(cid, "current_temperature");
-    const setTemp  = this._attr(cid, "temperature");
-    const fanMode  = this._attr(cid, "fan_mode");
-    const friendly = this._attr(cid, "friendly_name");
+    const setTemp  = this._attr(cid, 'temperature');
+    const fanMode  = this._attr(cid, 'fan_mode');
+    const friendly = this._attr(cid, 'friendly_name');
 
-    /* fault_entity тохируулсан бол ашиглана → алдааны хэсэг харагдана */
+    /* Орчны темп: ambient_entity sensor (scale: 0.1) → зөв утга
+       Тохируулаагүй бол climate entity-н attribute (scale хийгдээгүй → 238°C) */
+    let ambTemp = null;
+    if (fcu.ambient_entity) {
+      ambTemp = this._numSt(fcu.ambient_entity);
+    } else {
+      const v = this._attr(cid, 'current_temperature');
+      ambTemp = v !== null ? parseFloat(v) : null;
+    }
+
+    /* fault_entity тохируулсан бол алдааны хэсэг гарна */
     const faultId  = fcu.fault_entity || null;
-    const faultRaw = faultId ? this._num(faultId) : null;
+    const faultRaw = faultId ? this._numSt(faultId) : null;
 
     const isAvail = hvacMode !== null;
-    const isOn    = isAvail && hvacMode !== "off" && hvacMode !== "unavailable";
+    const isOn    = isAvail && hvacMode !== 'off' && hvacMode !== 'unavailable';
     const fanDots = FAN_DOTS[fanMode] ?? 0;
 
     const raw    = faultRaw ?? 0;
     const alarms = ALARM_BITS.map(a => ({
       name: a.name,
-      st:   (faultRaw !== null && (raw & (1 << a.bit))) ? a.type : "ok",
+      st:   (faultRaw !== null && (raw & (1 << a.bit))) ? a.type : 'ok',
     }));
-    const hasErr = faultRaw !== null && alarms.some(a => a.st === "err");
+    const hasErr = faultRaw !== null && alarms.some(a => a.st === 'err');
 
-    let status = "off";
-    if (isAvail && isOn && hasErr) status = "err";
-    else if (isAvail && isOn)      status = "on";
+    let status = 'off';
+    if (isAvail && isOn && hasErr) status = 'err';
+    else if (isAvail && isOn)      status = 'on';
 
     return {
-      entity:   cid,
-      name:     fcu.name || friendly || cid,
-      slave:    fcu.slave ? `slave ${fcu.slave}` : cid,
+      entity: cid,
+      name:   fcu.name || friendly || cid,
+      slave:  fcu.slave ? `slave ${fcu.slave}` : cid,
       isAvail, isOn, status,
       hvacMode, ambTemp, setTemp,
       fanMode, fanDots,
@@ -194,22 +215,29 @@ class FcuDashboardCard extends HTMLElement {
         </div>`;
     }
 
-    const mi     = HVAC_MODE[f.hvacMode] ?? { label: f.hvacMode, icon: "", cls: "" };
-    const bCls   = f.status === "on" ? "b-on" : f.status === "err" ? "b-err" : "b-off";
-    const bTxt   = f.status === "on" ? "Асаалттай" : f.status === "err" ? "Алдаатай" : "Унтраалттай";
-    const cls    = `fcu${f.hasErr ? " err-border" : ""}`;
-    const fanLbl = FAN_LABEL[f.fanMode] ?? (f.fanMode || "--");
+    const mi   = HVAC_MODE[f.hvacMode] ?? { label: f.hvacMode, icon: '', cls: '' };
+    const bCls = f.status === 'on' ? 'b-on' : f.status === 'err' ? 'b-err' : 'b-off';
+    const bTxt = f.status === 'on' ? 'Асаалттай' : f.status === 'err' ? 'Алдаатай' : 'Унтраалттай';
+    const cls  = `fcu${f.hasErr ? ' err-border' : ''}`;
+    const fanLbl = FAN_LABEL[f.fanMode] ?? (f.fanMode || '--');
 
-    /* Горим дээр тулгуурлан цэгийн өнгийг тодорхойлно */
-    const dotMode = f.hvacMode === "cool" ? "d-cool"
-                  : f.hvacMode === "heat" ? "d-heat"
-                  : "d-fan";
-    const dots = [1, 2, 3, 4, 5].map(i =>
-      `<div class="dot${f.fanDots >= i ? ` on ${dotMode}` : ""}"></div>`
-    ).join("");
+    /* ── Сэнсний хурд цэг: өнгийн шат + дээд хурданд glow ── */
+    const isMax = f.fanDots >= 5;
+    const dots = [1, 2, 3, 4, 5].map((i, idx) => {
+      const on = f.fanDots >= i;
+      /* Дээд хурданд бүх идэвхтэй цэг улаан болж pulse б'нэ */
+      const color = on ? (isMax ? '#E53935' : DOT_CLR[idx]) : null;
+      const pulse = on && isMax ? ' d-pulse' : '';
+      return `<div class="dot${on ? ' on' : ''}${pulse}"${on ? ` style="background:${color}"` : ''}></div>`;
+    }).join('');
 
-    /* fault_entity тохируулсан бол л алдааны хэсгийг харуулна */
-    let alarmSection = "";
+    /* Орчны темп: 1 decimal хадгалж харуулна */
+    const ambTxt = f.ambTemp !== null
+      ? `${parseFloat(f.ambTemp).toFixed(1)}°C`
+      : '--';
+
+    /* fault_entity тохируулсан л алдааны хэсэг гарна */
+    let alarmSection = '';
     if (f.hasFault) {
       alarmSection = `
         <hr class="div">
@@ -221,9 +249,9 @@ class FcuDashboardCard extends HTMLElement {
               <span class="a-name">${a.name}</span>
             </span>
             <span class="a-st t-${a.st}">
-              ${a.st === "ok" ? "OK" : a.st === "warn" ? "АНХААРУУЛГА" : "АЛДАА"}
+              ${a.st === 'ok' ? 'OK' : a.st === 'warn' ? 'АНХААРУУЛГА' : 'АЛДАА'}
             </span>
-          </div>`).join("")}`;
+          </div>`).join('')}`;
     }
 
     return `
@@ -241,11 +269,11 @@ class FcuDashboardCard extends HTMLElement {
         </div>
         <div class="row">
           <span class="lbl">Орчны темп</span>
-          <span class="val">${f.ambTemp ?? "--"}°C</span>
+          <span class="val">${ambTxt}</span>
         </div>
         <div class="row">
           <span class="lbl">Тохируулга</span>
-          <span class="val">${f.setTemp ?? "--"}°C</span>
+          <span class="val">${f.setTemp ?? '--'}°C</span>
         </div>
         <div class="row">
           <span class="lbl">Сэнсний хурд</span>
@@ -261,20 +289,20 @@ class FcuDashboardCard extends HTMLElement {
   _render() {
     if (!this._config || !this._hass) return;
 
-    const title = this._config.title || "FCU Хяналтын самбар";
+    const title = this._config.title || 'FCU Хяналтын самбар';
     let cntOn = 0, cntOff = 0, cntErr = 0;
 
     const cards = this._config.fcus.map(f => {
       const d = this._build(f);
-      if      (d.status === "on")  cntOn++;
-      else if (d.status === "err") cntErr++;
+      if      (d.status === 'on')  cntOn++;
+      else if (d.status === 'err') cntErr++;
       else                         cntOff++;
       return this._cardHtml(d);
     });
 
     const root = this.shadowRoot;
     root.innerHTML = `<style>${STYLES}</style>`;
-    const haCard = document.createElement("ha-card");
+    const haCard = document.createElement('ha-card');
     haCard.innerHTML = `
       <div class="root">
         <div class="card-title">${title}</div>
@@ -283,7 +311,7 @@ class FcuDashboardCard extends HTMLElement {
           <div class="s-box"><div class="s-num c-off">${cntOff}</div><div class="s-lbl">Унтраалттай</div></div>
           <div class="s-box"><div class="s-num c-err">${cntErr}</div><div class="s-lbl">Алдаатай</div></div>
         </div>
-        <div class="grid">${cards.join("")}</div>
+        <div class="grid">${cards.join('')}</div>
       </div>`;
     root.appendChild(haCard);
   }
@@ -292,29 +320,41 @@ class FcuDashboardCard extends HTMLElement {
 
   static getStubConfig() {
     return {
-      title: "FCU Хяналтын самбар",
+      title: 'FCU Хяналтын самбар',
       fcus: [
-        { entity: "climate.fcu_1", name: "FCU 1", slave: 2, fault_entity: "sensor.fcu_1_fault_status" },
-        { entity: "climate.fcu_2", name: "FCU 2", slave: 3, fault_entity: "sensor.fcu_2_fault_status" },
-        { entity: "climate.fcu_3", name: "FCU 3", slave: 4, fault_entity: "sensor.fcu_3_fault_status" },
-        { entity: "climate.fcu_4", name: "FCU 4", slave: 5, fault_entity: "sensor.fcu_4_fault_status" },
-        { entity: "climate.fcu_5", name: "FCU 5", slave: 6, fault_entity: "sensor.fcu_5_fault_status" },
-        { entity: "climate.fcu_6", name: "FCU 6", slave: 7, fault_entity: "sensor.fcu_6_fault_status" },
+        { entity: 'climate.fcu_1', name: 'FCU 1', slave: 2,
+          ambient_entity: 'sensor.fcu_1_ambient_temperature',
+          fault_entity:   'sensor.fcu_1_fault_status' },
+        { entity: 'climate.fcu_2', name: 'FCU 2', slave: 3,
+          ambient_entity: 'sensor.fcu_2_ambient_temperature',
+          fault_entity:   'sensor.fcu_2_fault_status' },
+        { entity: 'climate.fcu_3', name: 'FCU 3', slave: 4,
+          ambient_entity: 'sensor.fcu_3_ambient_temperature',
+          fault_entity:   'sensor.fcu_3_fault_status' },
+        { entity: 'climate.fcu_4', name: 'FCU 4', slave: 5,
+          ambient_entity: 'sensor.fcu_4_ambient_temperature',
+          fault_entity:   'sensor.fcu_4_fault_status' },
+        { entity: 'climate.fcu_5', name: 'FCU 5', slave: 6,
+          ambient_entity: 'sensor.fcu_5_ambient_temperature',
+          fault_entity:   'sensor.fcu_5_fault_status' },
+        { entity: 'climate.fcu_6', name: 'FCU 6', slave: 7,
+          ambient_entity: 'sensor.fcu_6_ambient_temperature',
+          fault_entity:   'sensor.fcu_6_fault_status' },
       ],
     };
   }
 }
 
-customElements.define("fcu-dashboard-card", FcuDashboardCard);
+customElements.define('fcu-dashboard-card', FcuDashboardCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "fcu-dashboard-card",
-  name: "FCU Dashboard Card",
-  description: "RS485 Modbus FCU хяналтын самбар",
+  type: 'fcu-dashboard-card',
+  name: 'FCU Dashboard Card',
+  description: 'RS485 Modbus FCU хяналтын самбар',
   preview: true,
 });
 console.info(
-  "%c FCU-DASHBOARD-CARD %c v1.4.0 ",
-  "color:#fff;background:#378ADD;font-weight:bold;padding:2px 4px;border-radius:4px 0 0 4px",
-  "color:#378ADD;background:#EAF3DE;font-weight:bold;padding:2px 4px;border-radius:0 4px 4px 0"
+  '%c FCU-DASHBOARD-CARD %c v1.5.0 ',
+  'color:#fff;background:#378ADD;font-weight:bold;padding:2px 4px;border-radius:4px 0 0 4px',
+  'color:#378ADD;background:#EAF3DE;font-weight:bold;padding:2px 4px;border-radius:0 4px 4px 0'
 );
